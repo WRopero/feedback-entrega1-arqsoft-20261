@@ -1,0 +1,525 @@
+# Evaluación Técnica - Shepherd Garde
+
+## Nota Final: 4.2/5.0
+
+---
+
+## Análisis del Código Implementado
+
+He revisado el código de su plataforma de e-commerce de moda con sistema de "Drops" (lanzamientos limitados). El proyecto demuestra una arquitectura avanzada con conceptos profesionales de e-commerce.
+
+### Modelos de Datos
+
+**Archivos revisados:**
+- `catalog/models.py` (115 líneas, 5 modelos)
+- `shop/models.py` (80 líneas, 6 modelos)
+- `users/models.py` (perfiles de usuario)
+
+Su modelado de datos es **excepcional** y demuestra comprensión avanzada de sistemas de e-commerce reales.
+
+**Clase Base TimeStampedModel - Excelente práctica:**
+
+```python
+class TimeStampedModel(models.Model):
+    """Clase base abstracta con campos de auditoría."""
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        abstract = True
+```
+
+Esto es **profesional**. Usar una clase base abstracta para auditoría evita duplicación de código.
+
+**Modelo Collection - Sistema de Drops:**
+
+```python
+class Collection(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255, unique=True)
+    release_date = models.DateTimeField(null=True, blank=True)
+    end_date = models.DateTimeField(null=True, blank=True)
+    
+    def is_droppable(self):
+        return bool(self.release_date or self.end_date)
+    
+    def is_active(self):
+        if not self.release_date:
+            return True
+        return timezone.now() >= self.release_date
+    
+    def is_preview(self):
+        if not self.release_date:
+            return False
+        return timezone.now() < self.release_date
+```
+
+**Aspectos destacados:**
+
+1. **UUIDs como primary keys**: Excelente para seguridad y escalabilidad (evita enumeration attacks).
+
+2. **Sistema de Drops flexible**: 
+   - Sin `release_date` = catálogo permanente
+   - Con `release_date` = lanzamiento programado (Hype)
+   - Métodos de negocio claros: `is_active()`, `is_preview()`
+
+3. **Slugs para URLs amigables**: SEO-friendly.
+
+**Modelo ProductVariant - Sistema de SKU profesional:**
+
+```python
+class ProductVariant(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
+    sku = models.CharField(max_length=100, unique=True)
+    size = models.CharField(max_length=50)
+    color = models.CharField(max_length=50)
+    stock = models.PositiveIntegerField(default=0)
+    price_override = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    
+    def decrement_stock_pessimistic(self, quantity):
+        """
+        Bloqueo transaccional de fila para descontar inventario.
+        Debe ser llamado DENTRO de un bloque transaction.atomic() junto con select_for_update().
+        """
+        if self.stock >= quantity:
+            self.stock -= quantity
+            self.save(update_fields=['stock', 'updated_at'])
+            return True
+        return False
+```
+
+**Esto es EXCELENTE:**
+
+1. **SKU único por variante**: Cada combinación talla/color tiene su propio inventario.
+
+2. **price_override**: Permite precios especiales por variante (ej: talla XL más cara).
+
+3. **Bloqueo pesimista documentado**: El método `decrement_stock_pessimistic()` está diseñado para usarse con `select_for_update()`, evitando race conditions en compras simultáneas.
+
+**Modelo Review - Sistema de reseñas:**
+
+```python
+class Review(TimeStampedModel):
+    RATING_CHOICES = [(i, i) for i in range(1, 6)]
+    
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reviews')
+    rating = models.PositiveSmallIntegerField(choices=RATING_CHOICES)
+    title = models.CharField(max_length=120, blank=True)
+    body = models.TextField(blank=True)
+    
+    class Meta:
+        unique_together = ('product', 'user')
+        ordering = ['-created_at']
+```
+
+**Fortalezas:**
+- `unique_together`: Un usuario solo puede reseñar un producto una vez
+- Rating de 1-5 estrellas
+- Ordenamiento por fecha descendente
+
+**Modelo Cart - Carrito de compras:**
+
+```python
+class Cart(TimeStampedModel):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name='cart')
+    session_id = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    
+    def calculate_total(self):
+        return sum(item.get_subtotal() for item in self.items.all())
+```
+
+**Excelente diseño:**
+- Soporta usuarios autenticados (`user`) y anónimos (`session_id`)
+- `OneToOneField`: Un usuario = un carrito
+- Método `calculate_total()` para obtener el total
+
+**Modelo Order - Órdenes con estados:**
+
+```python
+class Order(TimeStampedModel):
+    STATUS_CHOICES = (
+        ('pending', 'Pending Payment'),
+        ('paid', 'Paid / Confirmed'),
+        ('shipped', 'Shipped'),
+        ('cancelled', 'Cancelled / Expired'),
+    )
+    
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
+    ships_to = models.ForeignKey(Address, on_delete=models.PROTECT, related_name='orders_received')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    payment_intent_id = models.CharField(max_length=255, null=True, blank=True)
+```
+
+**Aspectos destacados:**
+- Estados claros del flujo de orden
+- `PROTECT` en dirección: No se puede borrar una dirección con órdenes
+- `payment_intent_id`: Integración con pasarela de pagos (Stripe)
+
+**Modelo OrderItem - Snapshot de precios:**
+
+```python
+class OrderItem(TimeStampedModel):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT)
+    quantity = models.PositiveIntegerField(default=1)
+    price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2)  # Snapshot!
+```
+
+**Esto es CRÍTICO y está bien implementado:**
+- `price_at_purchase`: Guarda el precio al momento de compra
+- Si el producto cambia de precio después, la orden mantiene el precio histórico
+- `PROTECT`: No se puede borrar una variante que ya fue vendida
+
+**Áreas de mejora:**
+
+1. **Falta validación de stock en CartItem**:
+
+```python
+from django.core.exceptions import ValidationError
+
+class CartItem(TimeStampedModel):
+    # ... campos existentes ...
+    
+    def clean(self):
+        if self.quantity > self.variant.stock:
+            raise ValidationError(
+                f'Solo hay {self.variant.stock} unidades disponibles de {self.variant}'
+            )
+    
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+```
+
+2. **Agregar método para calcular rating promedio en Product**:
+
+```python
+from django.db.models import Avg
+
+class Product(TimeStampedModel):
+    # ... campos existentes ...
+    
+    @property
+    def average_rating(self):
+        avg = self.reviews.aggregate(Avg('rating'))['rating__avg']
+        return round(avg, 1) if avg else 0
+    
+    @property
+    def review_count(self):
+        return self.reviews.count()
+```
+
+3. **Agregar método para proceso de checkout completo**:
+
+```python
+from django.db import transaction
+
+class Cart(TimeStampedModel):
+    @transaction.atomic
+    def checkout(self, user, address):
+        """
+        Convierte el carrito en una orden, usando bloqueo pesimista para inventario.
+        """
+        # Crear orden
+        order = Order.objects.create(
+            user=user,
+            ships_to=address,
+            status='pending'
+        )
+        
+        total = 0
+        
+        # Procesar cada item del carrito
+        for cart_item in self.items.select_related('variant__product'):
+            # Bloqueo pesimista de la variante
+            variant = ProductVariant.objects.select_for_update().get(pk=cart_item.variant.pk)
+            
+            # Validar y reducir stock
+            if not variant.decrement_stock_pessimistic(cart_item.quantity):
+                raise ValueError(f'Stock insuficiente para {variant}')
+            
+            # Obtener precio actual
+            price = variant.price_override if variant.price_override else variant.product.base_price
+            
+            # Crear OrderItem con snapshot de precio
+            OrderItem.objects.create(
+                order=order,
+                variant=variant,
+                quantity=cart_item.quantity,
+                price_at_purchase=price
+            )
+            
+            total += price * cart_item.quantity
+        
+        # Actualizar total de la orden
+        order.total_amount = total
+        order.save(update_fields=['total_amount'])
+        
+        # Limpiar carrito
+        self.items.all().delete()
+        
+        return order
+```
+
+---
+
+### Arquitectura del Proyecto
+
+**Separación de apps:**
+- `catalog`: Productos, colecciones, variantes, reseñas
+- `shop`: Carrito, órdenes, direcciones, facturas
+- `users`: Autenticación y perfiles
+
+Esta separación es **profesional** y facilita el mantenimiento.
+
+---
+
+### Containerización con Docker
+
+**Archivo:** `docker-compose.yml`
+
+Configuración con frontend y backend separados. Excelente arquitectura.
+
+---
+
+### Buenas Prácticas de Git y Control de Versiones
+
+**Análisis del historial de commits:** 2 commits totales
+
+**Evaluación: Necesita mejorar prácticas de Git**
+
+**Problema crítico:**
+
+Solo 2 commits para un proyecto de esta complejidad indica que:
+1. Hicieron todo el desarrollo en local sin commits intermedios
+2. O subieron el código al final
+
+**Recomendaciones urgentes:**
+
+1. **Commits frecuentes**: Hacer commits después de cada funcionalidad:
+   ```bash
+   git add catalog/models.py
+   git commit -m "feat: agregar modelo Collection con sistema de Drops"
+   
+   git add shop/models.py
+   git commit -m "feat: implementar carrito con soporte para usuarios anónimos"
+   ```
+
+2. **Conventional Commits**:
+   - `feat:` nuevas funcionalidades
+   - `fix:` correcciones
+   - `refactor:` mejoras de código
+
+3. **Branches para desarrollo**:
+   ```bash
+   git checkout -b feature/checkout-process
+   # ... desarrollar ...
+   git commit -m "feat: implementar proceso de checkout con bloqueo pesimista"
+   git checkout main
+   git merge feature/checkout-process
+   ```
+
+---
+
+## Recomendaciones Específicas para la Segunda Entrega
+
+### 1. Implementar Wishlist (Lista de Deseos)
+
+```python
+class Wishlist(TimeStampedModel):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='wishlist')
+
+class WishlistItem(TimeStampedModel):
+    wishlist = models.ForeignKey(Wishlist, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    added_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ('wishlist', 'product')
+```
+
+### 2. Sistema de Notificaciones para Drops
+
+```python
+class DropNotification(TimeStampedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    collection = models.ForeignKey(Collection, on_delete=models.CASCADE)
+    notified = models.BooleanField(default=False)
+    
+    class Meta:
+        unique_together = ('user', 'collection')
+
+# Tarea programada para enviar notificaciones
+def notify_upcoming_drops():
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    # Drops que lanzan en las próximas 24 horas
+    tomorrow = timezone.now() + timedelta(hours=24)
+    upcoming = Collection.objects.filter(
+        release_date__lte=tomorrow,
+        release_date__gte=timezone.now()
+    )
+    
+    for collection in upcoming:
+        notifications = DropNotification.objects.filter(
+            collection=collection,
+            notified=False
+        ).select_related('user')
+        
+        for notif in notifications:
+            send_mail(
+                subject=f'¡{collection.name} lanza mañana!',
+                message=f'El drop {collection.name} estará disponible mañana',
+                from_email='noreply@shepherdgarde.com',
+                recipient_list=[notif.user.email],
+            )
+            notif.notified = True
+            notif.save()
+```
+
+### 3. Sistema de Cupones de Descuento
+
+```python
+class Coupon(TimeStampedModel):
+    code = models.CharField(max_length=50, unique=True)
+    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    valid_from = models.DateTimeField()
+    valid_to = models.DateTimeField()
+    max_uses = models.PositiveIntegerField(default=1)
+    times_used = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    
+    def is_valid(self):
+        now = timezone.now()
+        return (
+            self.is_active and
+            self.valid_from <= now <= self.valid_to and
+            self.times_used < self.max_uses
+        )
+    
+    def apply_discount(self, amount):
+        if not self.is_valid():
+            raise ValueError('Cupón inválido o expirado')
+        discount = amount * (self.discount_percentage / 100)
+        return amount - discount
+
+class Order(TimeStampedModel):
+    # ... campos existentes ...
+    coupon = models.ForeignKey(Coupon, on_delete=models.SET_NULL, null=True, blank=True)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+```
+
+### 4. Tracking de Envíos
+
+```python
+class Shipment(TimeStampedModel):
+    STATUS_CHOICES = (
+        ('preparing', 'Preparando'),
+        ('shipped', 'Enviado'),
+        ('in_transit', 'En tránsito'),
+        ('delivered', 'Entregado'),
+    )
+    
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='shipment')
+    tracking_number = models.CharField(max_length=100, unique=True)
+    carrier = models.CharField(max_length=100)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='preparing')
+    estimated_delivery = models.DateField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    
+    def mark_delivered(self):
+        self.status = 'delivered'
+        self.delivered_at = timezone.now()
+        self.save()
+        
+        # Actualizar orden
+        self.order.status = 'delivered'
+        self.order.save()
+```
+
+### 5. Analytics de Productos
+
+```python
+class ProductView(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='views')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    session_id = models.CharField(max_length=255, null=True, blank=True)
+    viewed_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['product', '-viewed_at']),
+        ]
+
+# En la vista de detalle de producto
+class ProductDetailView(DetailView):
+    def get(self, request, *args, **kwargs):
+        response = super().get(request, *args, **kwargs)
+        
+        # Registrar vista
+        ProductView.objects.create(
+            product=self.object,
+            user=request.user if request.user.is_authenticated else None,
+            session_id=request.session.session_key
+        )
+        
+        return response
+```
+
+### 6. Sistema de Tallas Recomendadas
+
+```python
+class SizeRecommendation(TimeStampedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    height = models.PositiveIntegerField(help_text="Altura en cm")
+    weight = models.PositiveIntegerField(help_text="Peso en kg")
+    preferred_fit = models.CharField(max_length=20, choices=[
+        ('tight', 'Ajustado'),
+        ('regular', 'Regular'),
+        ('loose', 'Holgado'),
+    ])
+    
+    def recommend_size(self, product):
+        # Lógica para recomendar talla basada en medidas
+        # Esto podría usar ML en el futuro
+        pass
+```
+
+---
+
+## Aspectos Positivos del Proyecto
+
+- **Arquitectura profesional** con UUIDs y clase base abstracta
+- **Sistema de Drops** innovador para lanzamientos limitados
+- **Bloqueo pesimista** documentado para evitar race conditions
+- **Snapshot de precios** en órdenes (buena práctica)
+- **Sistema de variantes** completo (SKU, talla, color)
+- **Carrito para usuarios anónimos** y autenticados
+- **Sistema de reseñas** con unique_together
+- **Separación de apps** clara y profesional
+- **Docker** configurado con frontend/backend
+
+---
+
+## Próximos Pasos
+
+1. **Mejorar prácticas de Git** - Hacer commits frecuentes
+2. **Implementar wishlist** para productos deseados
+3. **Sistema de notificaciones** para Drops
+4. **Cupones de descuento** para marketing
+5. **Tracking de envíos** con estados
+6. **Analytics** de productos más vistos
+7. **Tests** para proceso de checkout con bloqueo pesimista
+8. **Documentar** el sistema de Drops en README
+
+Su proyecto tiene una arquitectura **excepcional** que demuestra conocimiento profesional de e-commerce. El sistema de Drops es innovador y el manejo de inventario con bloqueo pesimista es correcto. Para la segunda entrega, enfóquense en completar las funcionalidades sugeridas y mejorar significativamente las prácticas de Git.
+
+---
+
+*Evaluación realizada sobre el código fuente del repositorio GitHub.*
