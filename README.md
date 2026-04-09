@@ -1,16 +1,11 @@
-# Evaluación Entrega 1 — Arquitectura de Software 20261
+# Retroalimentación Entrega 1 — Arquitectura de Software 20261
 
-Repositorio de retroalimentación y notas para la primera entrega del curso.
+Repositorio de retroalimentación individual por proyecto para la primera entrega del curso.
 
-## Contenido
+## Proyectos
 
-- `NOTAS_FINALES_ENTREGA_1.xlsx` — Notas finales de todos los grupos
-- `feedbacks/` — Retroalimentación individual por proyecto
-
-## Proyectos evaluados
-
-| # | Proyecto | Archivo de feedback |
-|---|----------|---|
+| # | Proyecto | Feedback |
+|---|----------|----------|
 | 01 | Chocolate Beauty | [ver](feedbacks/01_Chocolate_Beauty_EVALUACION_ENTREGA_1.md) |
 | 02 | cuchao | [ver](feedbacks/02_cuchao_EVALUACION_ENTREGA_1.md) |
 | 03 | Code Academy | [ver](feedbacks/03_Code_Academy_EVALUACION_ENTREGA_1.md) |

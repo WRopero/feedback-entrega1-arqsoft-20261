@@ -1,7 +1,5 @@
 # Evaluación Técnica - Shepherd Garde
 
-## Nota Final: 4.2/5.0
-
 ---
 
 ## Análisis del Código Implementado

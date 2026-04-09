@@ -1,7 +1,5 @@
 # Evaluación Técnica - CarNest
 
-## Nota Final: 4.07/5.0
-
 ---
 
 ## Análisis del Código Implementado

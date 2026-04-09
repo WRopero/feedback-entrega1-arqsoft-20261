@@ -1,172 +1,94 @@
 # Evaluación Técnica - veripay
 
-## Nota Final: 0.51/5.0
+> **Nota:** El link enviado apuntaba a la wiki del repositorio (`/wiki/Reglas-de-Programacion`) en lugar del repo principal. La evaluación automatizada no encontró el código. El repositorio correcto es `gatehortus/proyecto-arquitectura`.
 
 ---
 
 ## Análisis del Código Implementado
 
-He revisado el repositorio de su proyecto y **no encontré implementación de código Django**.
+El proyecto implementa una plataforma de conciliación de pagos financieros. Es un dominio técnico exigente y el equipo lo abordó con una separación de apps coherente.
 
-### Estado Actual:
+### Arquitectura General
 
-El repositorio no contiene archivos de código fuente. Esto indica que el proyecto está en fase muy inicial o no se subió correctamente al repositorio.
+Cinco apps con responsabilidades diferenciadas: `certificados`, `conciliacion`, `pagos`, `facturas` y `core`. El modelo de dominio es apropiado para el problema de reconciliación financiera.
 
-### Requisitos Mínimos No Cumplidos:
+### Modelos de Datos
 
-1. **No hay proyecto Django** (manage.py, settings.py, etc.)
-2. **No hay modelos de datos**
-3. **No hay vistas implementadas**
-4. **No hay Docker configurado**
-5. **No hay README**
-
-### Acciones Urgentes Requeridas:
-
-Esta situación es **crítica**. Para la segunda entrega debe:
-
-**1. Crear proyecto Django desde cero:**
-
-```bash
-django-admin startproject veripay
-cd veripay
-python manage.py startapp core
-```
-
-**2. Implementar modelos según su dominio de negocio:**
+`ProcesoReconciliacion` está bien estructurado con `TextChoices` para estados:
 
 ```python
-# core/models.py
-from django.db import models
-
-class Entidad1(models.Model):
-    # Definir campos según su negocio
-    nombre = models.CharField(max_length=200)
-    descripcion = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-class Entidad2(models.Model):
-    # Relación con Entidad1
-    entidad1 = models.ForeignKey(Entidad1, on_delete=models.CASCADE)
-    # Otros campos
+class EstadoProceso(models.TextChoices):
+    PENDIENTE   = 'PENDIENTE',   'Pendiente'
+    EN_PROCESO  = 'EN_PROCESO',  'En proceso'
+    FINALIZADO  = 'FINALIZADO',  'Finalizado'
+    ERROR       = 'ERROR',       'Error'
 ```
 
-**3. Crear vistas con Django REST Framework:**
+Uso de UUID como PK en todos los modelos y campos de auditoría `created_at` / `finalizado_at`. Los contadores `total_facturas`, `facturas_conciliadas`, `facturas_pendientes` permiten seguimiento del progreso sin queries adicionales.
+
+### Capa de Servicios
+
+La app `conciliacion` tiene `services.py`, lo que indica que la lógica de negocio no vive directamente en las vistas.
+
+---
+
+## Áreas de Mejora
+
+**1. Acoplamiento directo entre apps vía imports de modelos**
+
+`conciliacion/models.py` importa directamente de tres apps distintas:
 
 ```python
-# core/views.py
-from rest_framework import generics
-from .models import Entidad1
-from .serializers import Entidad1Serializer
-
-class Entidad1ListView(generics.ListCreateAPIView):
-    queryset = Entidad1.objects.all()
-    serializer_class = Entidad1Serializer
+from facturas.models import Factura
+from pagos.models import RegistroPago
+from certificados.models import CertificadoBancario
 ```
 
-**4. Configurar Docker:**
+Esto crea un grafo de dependencias rígido. Si se mueve `Factura` a otro módulo, `conciliacion` se rompe. En contextos financieros, las apps deben comunicarse a través de interfaces o eventos, no imports directos de modelos entre sí.
 
-```yaml
-# docker-compose.yml
-version: '3.8'
+**Solución:** Definir los Foreign Keys usando strings (`'facturas.Factura'`) en lugar de imports directos, o centralizar las referencias en un módulo `core/models.py`.
 
-services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: miapp_db
-      POSTGRES_USER: miapp_user
-      POSTGRES_PASSWORD: miapp_pass
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+**2. Contadores de facturas desincronizables**
 
-  web:
-    build: .
-    command: python manage.py runserver 0.0.0.0:8000
-    volumes:
-      - .:/app
-    ports:
-      - "8000:8000"
-    depends_on:
-      - db
+Los campos `total_facturas`, `facturas_conciliadas`, `facturas_pendientes` se actualizan manualmente. Si un proceso falla a mitad, los contadores quedan inconsistentes con la realidad.
 
-volumes:
-  postgres_data:
+```python
+# Riesgoso
+proceso.facturas_conciliadas += 1
+proceso.save()
+
+# Correcto — operación atómica
+ProcesoReconciliacion.objects.filter(pk=proceso.pk).update(
+    facturas_conciliadas=F('facturas_conciliadas') + 1
+)
 ```
 
-**5. Crear README con instrucciones:**
+**3. Sin tests**
 
-```markdown
-# veripay
+El dominio financiero es exactamente donde los tests son más críticos. Un error en la lógica de conciliación puede implicar que facturas queden sin cruzar o que pagos se apliquen incorrectamente. Para la segunda entrega es obligatorio tener tests de:
 
-## Descripción
-[Describir el proyecto]
+- Que una factura conciliada no se vuelve a procesar
+- Que la tolerancia de diferencia funciona correctamente
+- Que un proceso en estado ERROR no se puede continuar sin reiniciarlo
 
-## Instalación
+**4. `archivo_pagos_prueba.csv` en el repositorio**
 
-1. Clonar repositorio
-2. Ejecutar: `docker-compose up --build`
-3. Acceder a: http://localhost:8000
+Datos de prueba financieros no deben estar en el repositorio. Usar un script de generación de datos sintéticos o Django fixtures.
 
-## Funcionalidades
-[Listar funcionalidades implementadas]
-```
+**5. Sin control de acceso visible en vistas**
+
+Las vistas deben verificar que solo usuarios autorizados acceden a los procesos de conciliación. No se observa uso de permisos o decoradores de autenticación consistentes.
 
 ---
 
-## Recomendación Final
+## Recomendaciones para la Segunda Entrega
 
-Deben ponerse al día urgentemente. La segunda entrega requiere:
-
-1. Proyecto Django completo y funcional
-2. Docker configurado correctamente
-3. Modelos, vistas y serializers implementados
-4. Al menos 3-5 funcionalidades core funcionando
-5. README con documentación completa
-6. Demo funcional para la sustentación
-
-Consideren buscar ayuda del profesor o compañeros para ponerse al día rápidamente.
-
-
-### Buenas Prácticas de Git y Control de Versiones
-
-**Problema Crítico:** No se encontró repositorio Git en el proyecto.
-
-El control de versiones con Git es **fundamental** para cualquier proyecto de software profesional. Para la segunda entrega deben:
-
-1. **Inicializar Git en el proyecto:**
-   ```bash
-   git init
-   git add .
-   git commit -m "feat: initial commit"
-   ```
-
-2. **Configurar usuario:**
-   ```bash
-   git config user.name "Nombre Completo"
-   git config user.email "email@eafit.edu.co"
-   ```
-
-3. **Hacer commits frecuentes** con mensajes descriptivos:
-   ```bash
-   git add archivo.py
-   git commit -m "feat: agregar modelo de Usuario"
-   ```
-
-4. **Usar Conventional Commits:**
-   - `feat:` para nuevas funcionalidades
-   - `fix:` para correcciones
-   - `docs:` para documentación
-   - `refactor:` para mejoras de código
-
-5. **Subir a GitHub:**
-   ```bash
-   git remote add origin https://github.com/usuario/proyecto.git
-   git push -u origin main
-   ```
-
-**Sin Git, el proyecto pierde trazabilidad y colaboración efectiva.**
+1. **Eliminar el acoplamiento entre apps** — usar referencias por string en ForeignKey o un módulo central de tipos
+2. **Agregar tests** para los flujos de conciliación — al menos 5 casos de prueba
+3. **Proteger operaciones de escritura con transacciones atómicas** — `@transaction.atomic` en el servicio de conciliación
+4. **Implementar autenticación** en todos los endpoints
+5. **Quitar archivos de datos reales del repositorio** — reemplazar por fixtures o scripts de seed
 
 ---
----
 
-*Evaluación realizada sobre el código fuente del repositorio GitHub.*
+*Evaluación realizada sobre el código fuente del repositorio `gatehortus/proyecto-arquitectura`.*

@@ -1,7 +1,5 @@
 # Evaluación Técnica - Inmobilike-It
 
-## Nota Final: 4.07/5.0
-
 ---
 
 ## Análisis del Código Implementado

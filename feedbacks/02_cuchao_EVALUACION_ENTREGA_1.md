@@ -1,7 +1,5 @@
 # Evaluación Técnica - Cuchao
 
-## Nota Final: 4.49/5.0
-
 ---
 
 ## Análisis del Código Implementado

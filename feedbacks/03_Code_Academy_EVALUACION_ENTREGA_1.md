@@ -1,7 +1,5 @@
 # Evaluación Técnica - Code Academy
 
-## Nota Final: 3.51/5.0
-
 ---
 
 ## Análisis del Código Implementado
