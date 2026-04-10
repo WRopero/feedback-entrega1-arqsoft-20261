@@ -317,3 +317,96 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
 ```
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Agregar descuento de `cantidad_disponible` al crear reservas
+- [ ] Unificar `fecha` y `hora` en `DateTimeField` en modelo `Evento`
+- [ ] Envolver signal de tickets en `@transaction.atomic` + `select_for_update`
+- [ ] Garantizar unicidad de códigos de ticket (usar UUID completo o `unique=True`)
+- [ ] Mover lógica de signal a un servicio explícito
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de reservas (con control de stock atómico), servicio de pagos, servicio de generación de tickets
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Crear una interfaz abstracta para generación de tickets:
+
+```python
+# tickets/base.py
+from abc import ABC, abstractmethod
+
+class TicketGenerator(ABC):
+    @abstractmethod
+    def generate(self, reserva) -> list: ...
+
+# tickets/qr_generator.py
+class QRTicketGenerator(TicketGenerator):
+    def generate(self, reserva) -> list:
+        # Generar tickets con código QR
+        ...
+
+# tickets/pdf_generator.py
+class PDFTicketGenerator(TicketGenerator):
+    def generate(self, reserva) -> list:
+        # Generar tickets como PDF descargable
+        ...
+```
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_reserva_descuenta_cantidad_disponible(self):
+    # TipoTicket con cantidad_disponible=100, reservar 5 → cantidad_disponible=95
+
+def test_no_se_puede_reservar_mas_de_lo_disponible(self):
+    # TipoTicket con cantidad_disponible=2, reservar 5 → error
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

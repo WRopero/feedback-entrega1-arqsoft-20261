@@ -281,3 +281,99 @@ Esta separación es **profesional** y facilita el mantenimiento.
 **Archivo:** `docker-compose.yml`
 
 Configuración con frontend y backend separados. Excelente arquitectura.
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Cambiar `CollectionListView.get_queryset()` para filtrar en la BD en lugar de en Python
+- [ ] Mover lógica de stock pessimistic a un `CheckoutService` con transacción completa
+- [ ] Capturar `IntegrityError` en creación de reviews en vez de check + save separados
+- [ ] Mover import de `settings` al top de `models.py`
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de checkout completo, servicio de inventario, servicio de notificaciones de drops
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Crear interfaz para servicio de inventario:
+
+```python
+# inventory/base.py
+from abc import ABC, abstractmethod
+
+class InventoryService(ABC):
+    @abstractmethod
+    def reserve_stock(self, variant_id, quantity) -> bool: ...
+    
+    @abstractmethod
+    def release_stock(self, variant_id, quantity) -> None: ...
+
+# inventory/pessimistic_service.py
+class PessimisticInventoryService(InventoryService):
+    def reserve_stock(self, variant_id, quantity) -> bool:
+        with transaction.atomic():
+            variant = ProductVariant.objects.select_for_update().get(id=variant_id)
+            ...
+
+# inventory/optimistic_service.py
+class OptimisticInventoryService(InventoryService):
+    def reserve_stock(self, variant_id, quantity) -> bool:
+        # Usar versioning/CAS para control optimista
+        ...
+```
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_decrement_stock_rechaza_si_insuficiente(self):
+    # Variante con stock=2, intentar reservar 5 → retorna False
+
+def test_collection_preview_no_permite_compra(self):
+    # Colección con release_date futuro → no se puede hacer checkout
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

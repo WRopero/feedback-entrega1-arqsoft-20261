@@ -276,3 +276,98 @@ volumes:
   postgres_data:
   media_files:  # Agregar este volumen
 ```
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Mover SECRET_KEY y DEBUG a variables de entorno
+- [ ] Agregar `@transaction.atomic` + `select_for_update()` en `procesar_compra`
+- [ ] Crear capa de servicios para la lógica de compra
+- [ ] Quitar archivos `.pyc` del repositorio
+- [ ] Agregar validación de precio positivo en modelo `Carro`
+- [ ] Validar que el comprador no sea el propietario
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de compra-venta (con transacción atómica), servicio de notificaciones, servicio de búsqueda/filtros de catálogo
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Crear una interfaz abstracta para el método de pago:
+
+```python
+# services/payment/base.py
+from abc import ABC, abstractmethod
+
+class PaymentProcessor(ABC):
+    @abstractmethod
+    def process(self, amount, buyer_info) -> dict: ...
+
+# services/payment/cash_processor.py
+class CashProcessor(PaymentProcessor):
+    def process(self, amount, buyer_info) -> dict:
+        return {"status": "pending_pickup", "method": "efectivo"}
+
+# services/payment/pse_processor.py
+class PSEProcessor(PaymentProcessor):
+    def process(self, amount, buyer_info) -> dict:
+        # Simular redirección a PSE
+        return {"status": "approved", "method": "pse", "ref": "PSE-12345"}
+```
+
+La vista de compra debe recibir el procesador por factory, no instanciarlo directamente.
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_compra_marca_carro_como_vendido(self):
+    # Crear carro disponible, procesarlo → carro.vendido == True
+
+def test_no_se_puede_comprar_carro_ya_vendido(self):
+    # Carro con vendido=True → debe rechazar la compra
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

@@ -365,3 +365,92 @@ Esta separación es **profesional** y sigue principios SOLID.
 **Archivo:** `docker-compose.yml`
 
 Configuración correcta con PostgreSQL y templates.
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Unificar la estructura de carpetas (accounts fuera del proyecto Django)
+- [ ] Agregar capa de servicios para lógica de órdenes
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de órdenes (crear, confirmar, cancelar), servicio de email, servicio de catálogo con búsqueda
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Crear interfaz para envío de emails (password reset, notificaciones):
+
+```python
+# core/email/base.py
+from abc import ABC, abstractmethod
+
+class EmailBackend(ABC):
+    @abstractmethod
+    def send(self, to, subject, body, html=None) -> bool: ...
+
+# core/email/smtp_backend.py
+class SMTPEmailBackend(EmailBackend):
+    def send(self, to, subject, body, html=None) -> bool:
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [to])
+
+# core/email/sendgrid_backend.py
+class SendGridEmailBackend(EmailBackend):
+    def send(self, to, subject, body, html=None) -> bool:
+        # Integración con SendGrid API
+        ...
+```
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_crear_usuario_con_email_duplicado_case_insensitive_falla(self):
+    # Crear user@test.com → crear User@Test.COM → IntegrityError
+
+def test_orden_lista_solo_ordenes_del_usuario_autenticado(self):
+    # User A tiene 2 órdenes, User B tiene 1 → User A solo ve 2
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés) — ya tienen i18n parcial implementado, verificar que cubra toda la interfaz
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

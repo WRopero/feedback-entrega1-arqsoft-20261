@@ -324,3 +324,78 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
 ```
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Diferir inicialización de `GeminiService` para evitar efecto secundario en `__init__`
+- [ ] Registrar providers en un diccionario en vez de imports condicionales en factory
+- [ ] Agregar límite de historial en `GeminiService` (como ya tiene `GroqService` del proyecto CatIA)
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Ya tienen servicios de IA. Agregar: servicio de procesamiento de documentos (OCR/parsing), servicio de gestión de suscripciones
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Ya tienen DIP implementado correctamente con `AIService` (ABC) + `GeminiService` + `OpenAIService`. Es el único proyecto con inversión de dependencias real.
+
+Para la Entrega 2, asegurar que:
+1. La factory (`get_ai_service()`) sea el único punto de creación
+2. Ninguna vista importe directamente `GeminiService` u `OpenAIService`
+3. Los tests usen un `MockAIService` que implemente `AIService`
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_gemini_service_genera_respuesta_con_contexto(self):
+    # Mock de la API de Gemini → respuesta basada en documento
+
+def test_factory_retorna_servicio_correcto_segun_settings(self):
+    # AI_PROVIDER='openai' → isinstance(service, OpenAIService)
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

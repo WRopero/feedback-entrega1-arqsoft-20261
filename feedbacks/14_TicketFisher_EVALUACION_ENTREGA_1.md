@@ -212,3 +212,94 @@ Esta separación es buena y facilita el mantenimiento.
 **Archivo:** `docker-compose.yml`
 
 Configuración correcta con PostgreSQL y templates.
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Unificar `require_rol` y `require_rols` en un solo decorador
+- [ ] Asegurar que los decoradores funcionen con CBVs (usar `method_decorator` o mixins)
+- [ ] Implementar contenido real en `access/services.py`
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de compra de boletas, servicio de validación de acceso, servicio de reportes de evento
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Crear interfaz para validación de acceso:
+
+```python
+# access/validators/base.py
+from abc import ABC, abstractmethod
+
+class AccessValidator(ABC):
+    @abstractmethod
+    def validate(self, ticket, event) -> dict: ...
+
+# access/validators/qr_validator.py
+class QRAccessValidator(AccessValidator):
+    def validate(self, ticket, event) -> dict:
+        # Escanear QR y validar contra BD
+        ...
+
+# access/validators/nfc_validator.py
+class NFCAccessValidator(AccessValidator):
+    def validate(self, ticket, event) -> dict:
+        # Validar tag NFC
+        ...
+```
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_usuario_sin_rol_no_accede_a_vista_protegida(self):
+    # User sin rol → decorador redirige a home
+
+def test_ticket_usado_no_permite_segundo_acceso(self):
+    # Ticket ya escaneado → validación falla
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

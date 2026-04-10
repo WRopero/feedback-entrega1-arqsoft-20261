@@ -88,3 +88,98 @@ Las vistas deben verificar que solo usuarios autorizados acceden a los procesos 
 3. **Proteger operaciones de escritura con transacciones atómicas** — `@transaction.atomic` en el servicio de conciliación
 4. **Implementar autenticación** en todos los endpoints
 5. **Quitar archivos de datos reales del repositorio** — reemplazar por fixtures o scripts de seed
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Desacoplar imports directos entre apps (usar string references en ForeignKey)
+- [ ] Agregar tests para flujos de conciliación
+- [ ] Usar `F()` para actualización atómica de contadores
+- [ ] Quitar archivo CSV de prueba del repositorio
+- [ ] Implementar autenticación en endpoints
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de conciliación (ya parcial), servicio de parseo de archivos, servicio de reportes/auditoría
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Crear interfaz para parseo de archivos de pago:
+
+```python
+# conciliacion/parsers/base.py
+from abc import ABC, abstractmethod
+
+class PaymentFileParser(ABC):
+    @abstractmethod
+    def parse(self, file_content) -> list[dict]: ...
+
+# conciliacion/parsers/csv_parser.py
+class CSVPaymentParser(PaymentFileParser):
+    def parse(self, file_content) -> list[dict]:
+        # Parsear CSV de pagos bancarios
+        ...
+
+# conciliacion/parsers/xml_parser.py
+class XMLPaymentParser(PaymentFileParser):
+    def parse(self, file_content) -> list[dict]:
+        # Parsear XML de certificados bancarios
+        ...
+```
+
+El servicio de conciliación recibe el parser como dependencia, no lo instancia.
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_conciliacion_cruza_factura_con_pago_exacto(self):
+    # Factura por $100, pago por $100 → estado conciliado
+
+def test_conciliacion_respeta_tolerancia(self):
+    # Factura $100, pago $99.50, tolerancia $1 → conciliada
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

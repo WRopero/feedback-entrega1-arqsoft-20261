@@ -209,3 +209,98 @@ services:
       db:
         condition: service_healthy  # Esperar a que DB esté lista
 ```
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Eliminar `@csrf_exempt` de todos los endpoints de autenticación
+- [ ] Migrar de JSON manual a Django REST Framework con serializers
+- [ ] Mover imports al top de los archivos
+- [ ] Cambiar `age` por `date_of_birth` en `FreelancerProfile`
+- [ ] Crear capa de servicios para lógica de negocio
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de registro/autenticación (usar DRF + JWT), servicio de matching freelancer-cliente, servicio de gestión de proyectos
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Crear una interfaz abstracta para el sistema de mensajería:
+
+```python
+# messaging/base.py
+from abc import ABC, abstractmethod
+
+class MessagingService(ABC):
+    @abstractmethod
+    def send_message(self, sender, recipient, content) -> dict: ...
+    
+    @abstractmethod
+    def get_conversation(self, user1, user2) -> list: ...
+
+# messaging/db_messaging.py
+class DatabaseMessagingService(MessagingService):
+    def send_message(self, sender, recipient, content) -> dict:
+        return Message.objects.create(sender=sender, recipient=recipient, content=content)
+
+# messaging/websocket_messaging.py  
+class WebSocketMessagingService(MessagingService):
+    def send_message(self, sender, recipient, content) -> dict:
+        # Enviar via WebSocket + guardar en DB
+        ...
+```
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_registro_freelancer_crea_perfil(self):
+    # POST /register con userType=freelancer → FreelancerProfile existe
+
+def test_cliente_no_puede_ver_panel_freelancer(self):
+    # Login como cliente → acceso a endpoints de freelancer denegado
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

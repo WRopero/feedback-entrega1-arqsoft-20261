@@ -314,3 +314,96 @@ EXPOSE 8000
 
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 ```
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Resolver inconsistencia de indentación (tabs vs spaces) en `orders/views.py`
+- [ ] Calcular `rating` dinámicamente en vez de campo desnormalizado
+- [ ] Mover `_grant_user_access_for_order` y `_mark_order_completed` a un `OrderService`
+- [ ] Usar FilterSet personalizado en lugar de exponer `category__name` directamente
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de órdenes (extraer lógica de vistas), servicio de progreso de curso, servicio de generación de certificados
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Ya tienen una base con `services.py`. Crear una interfaz para el servicio de notificaciones:
+
+```python
+# notifications/base.py
+from abc import ABC, abstractmethod
+
+class NotificationService(ABC):
+    @abstractmethod
+    def notify_purchase(self, user, order) -> None: ...
+    
+    @abstractmethod
+    def notify_course_complete(self, user, course) -> None: ...
+
+# notifications/email_service.py
+class EmailNotificationService(NotificationService):
+    def notify_purchase(self, user, order) -> None:
+        send_mail(...)
+
+# notifications/webhook_service.py
+class WebhookNotificationService(NotificationService):
+    def notify_purchase(self, user, order) -> None:
+        requests.post(webhook_url, ...)
+```
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_crear_orden_sandbox_otorga_acceso_a_productos(self):
+    # Crear orden → user.purchased_products debe contener los productos
+
+def test_webhook_stripe_marca_orden_como_completada(self):
+    # Simular payload de Stripe → orden.status == 'completed'
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```

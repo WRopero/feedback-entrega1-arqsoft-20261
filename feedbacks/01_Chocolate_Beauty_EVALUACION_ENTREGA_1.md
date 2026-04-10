@@ -253,3 +253,102 @@ class PedidoTestCase(TestCase):
         producto.refresh_from_db()
         self.assertEqual(producto.stock, 7)
 ```
+
+---
+
+## Requisitos para Entrega 2 (Rúbrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Separar `views.py` en módulos por dominio (auth, products, orders, reviews)
+- [ ] Extraer lógica de checkout a un `CheckoutService`
+- [ ] Mover `_build_invoice_pdf()` a una capa de servicios
+- [ ] Reemplazar `calificacion_promedio` con `Avg()` de Django ORM
+- [ ] Convertir `categoria` de `CharField` a `ForeignKey` a un modelo `Categoria`
+- [ ] Quitar imports dentro de funciones (mover al top del archivo)
+- [ ] Quitar archivos media del repositorio git
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentación, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de checkout, servicio de generación de facturas PDF, servicio de notificaciones (email al comprar)
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la lógica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura múltiples
+
+### 4. Inversión de dependencias (15%)
+
+Crear una interfaz abstracta para el servicio de pagos, con dos implementaciones concretas:
+
+```python
+# services/payment/base.py
+from abc import ABC, abstractmethod
+
+class PaymentGateway(ABC):
+    @abstractmethod
+    def process_payment(self, amount, currency, token) -> dict: ...
+    
+    @abstractmethod
+    def refund(self, transaction_id) -> dict: ...
+
+# services/payment/stripe_gateway.py
+class StripeGateway(PaymentGateway):
+    def process_payment(self, amount, currency, token) -> dict:
+        # Implementación con Stripe API
+        ...
+
+# services/payment/mock_gateway.py
+class MockGateway(PaymentGateway):
+    def process_payment(self, amount, currency, token) -> dict:
+        return {"status": "approved", "transaction_id": "MOCK-001"}
+```
+
+El `CheckoutService` debe depender de `PaymentGateway` (abstracción), no de `StripeGateway` (concreto).
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen lógica de negocio:
+
+```python
+def test_checkout_descuenta_stock_correctamente(self):
+    # Producto con stock=10, comprar 3 → stock debe ser 7
+
+def test_checkout_rechaza_si_stock_insuficiente(self):
+    # Producto con stock=2, intentar comprar 5 → debe fallar
+```
+
+### 6. Calidad del código y arquitectura (15%)
+
+- Separación clara en capas (vistas → servicios → modelos)
+- Sin lógica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el código fuente
+- Código limpio, sin archivos generados automáticamente sin contenido
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalización (i18n)**: Implementar soporte para **dos idiomas** (español + inglés)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```
