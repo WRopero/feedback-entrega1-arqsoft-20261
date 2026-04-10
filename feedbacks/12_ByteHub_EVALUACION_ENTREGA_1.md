@@ -368,6 +368,39 @@ Configuración correcta con PostgreSQL y templates.
 
 ---
 
+### Análisis Detallado de Código
+
+**Modelos:**
+
+`User` con `AbstractBaseUser` + `BaseUserManager` personalizado es una implementación madura. `UniqueConstraint(Lower('email'))` para emails case-insensitive es una práctica avanzada. `PHONE_PATTERN` como regex compilada valida teléfonos a nivel de módulo.
+
+**Lo que funciona bien:**
+- Email como identificador principal (no username)
+- `SafePasswordResetForm` con mensaje neutro evita user enumeration
+- `require_POST` en logout previene CSRF via GET
+- `url_has_allowed_host_and_scheme` valida redirects seguros
+- `Order.objects.get_user_orders_with_details()` — queries encapsuladas en manager
+
+**Problemas arquitectónicos:**
+
+1. **Estructura de directorios inconsistente:**
+```
+ByteHub/
+  accounts/       ← app fuera del proyecto
+  ByteHub/
+    ByteHub/      ← módulo de configuración
+      settings.py
+    orders/       ← app dentro del proyecto
+```
+`accounts` está al nivel del proyecto pero `orders` está dentro. Todas las apps deben estar al mismo nivel relativo a `manage.py`.
+
+2. **Sin capa de servicios para órdenes.** Las vistas son delgadas (bien) pero si se añade lógica (descuentos, impuestos) terminará en las vistas.
+
+3. **Manager custom sin documentación de interfaz.** `get_user_orders_with_details()` está en el manager pero no se puede verificar si hace queries eficientes (N+1 potencial).
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

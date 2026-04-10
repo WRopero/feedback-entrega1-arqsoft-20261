@@ -320,6 +320,64 @@ services:
 
 ---
 
+### Análisis Detallado de Arquitectura
+
+**Lo que funciona bien:**
+- Separación en apps (`eventos`, `pagos`, `reservas`) — dominio claro
+- Uso de Django Signals para automatizar generación de tickets post-pago
+- `bulk_create` para tickets — buena práctica de performance
+- `select_related('evento', 'tipo_ticket')` en queries de reservas
+- Campos de coordenadas en `Lugar` para geolocalización
+
+**Problemas arquitectónicos:**
+
+1. **Race condition en `crear_reserva` — descuento de stock sin transacción atómica:**
+
+```python
+# views.py actual
+reserva = form.save(commit=False)
+reserva.save()
+tipo = reserva.tipo_ticket
+tipo.cantidad_disponible -= reserva.cantidad  # ← no atómico
+tipo.save()
+```
+
+Dos usuarios pueden reservar simultáneamente y sobrepasar el stock. Solución:
+
+```python
+from django.db import transaction
+from django.db.models import F
+
+@transaction.atomic
+def crear_reserva(request, evento_id):
+    tipo = TipoTicket.objects.select_for_update().get(pk=tipo_id)
+    if tipo.cantidad_disponible < cantidad:
+        raise ValueError("Stock insuficiente")
+    TipoTicket.objects.filter(pk=tipo.pk).update(
+        cantidad_disponible=F('cantidad_disponible') - cantidad
+    )
+```
+
+2. **Signal de tickets sin protección de idempotencia:**
+
+```python
+@receiver(post_save, sender=Pago)
+def confirmar_reserva_y_generar_tickets(sender, instance, ...):
+    if not reserva.tickets.exists():      # ← race condition window
+        Ticket.objects.bulk_create(tickets)
+```
+
+Si el signal se ejecuta dos veces (reintento, Celery), se crean tickets duplicados. Envolver en `@transaction.atomic` + `select_for_update`.
+
+3. **`_codigo_unico()` trunca UUID a 20 caracteres** — reduce dramáticamente la unicidad. Con `bulk_create` no hay validación de unique en el batch. Usar UUID completo o agregar `unique=True` en el campo.
+
+4. **`Evento` tiene `fecha` y `hora` separados** — complicación innecesaria. Usar `DateTimeField` unifica la representación y simplifica comparaciones.
+
+5. **Sin tests.** No hay ningún test para reservas, pagos o generación de tickets.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

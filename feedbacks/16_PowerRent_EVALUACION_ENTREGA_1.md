@@ -34,6 +34,62 @@ He revisado el código de su proyecto y encontré una implementación completa d
 
 ---
 
+### Análisis Detallado de Código
+
+**Arquitectura:**
+
+Proyecto bien estructurado con `TimestampMixin`, `UUIDMixin`, y service layer completo (`EquipoService`, `ReservaService`, `PagoService`). Es uno de los proyectos con mayor madurez de servicios.
+
+**Lo que funciona bien:**
+- `TimestampMixin` y `UUIDMixin` como clases abstractas reutilizables — DRY
+- `ReservaService.crear_reserva()` con `@transaction.atomic` y validaciones completas
+- `EquipoService.buscar_equipos_disponibles()` con filtros de fecha, categoría y precio
+- `PagoService` separando tipos de pago (alquiler vs depósito)
+- `UserPassesTestMixin` para autorización en CBVs
+- `select_related('categoria')` en queries de equipos
+- Sistema de notificaciones con modelo `Notificacion`
+
+**Problemas arquitectónicos:**
+
+1. **`ICONOS` dict en el modelo `Notificacion` — mezcla presentación con dominio:**
+
+```python
+class Notificacion(models.Model):
+    ICONOS = {
+        'reserva_creada': 'bi-calendar-plus text-primary',  # ← clases CSS de Bootstrap!
+        'pago_recibido': 'bi-credit-card text-success',
+    }
+```
+
+Un modelo de datos no debe saber nada sobre clases CSS. Mover a un template tag:
+```python
+# templatetags/notificacion_tags.py
+ICONOS = {...}
+
+@register.filter
+def icono_notificacion(tipo):
+    return ICONOS.get(tipo, 'bi-bell')
+```
+
+2. **`Notificacion.Tipo.choices` duplicado en dict `ICONOS`** — si se agrega un tipo nuevo, hay que actualizar dos lugares. Viola DRY.
+
+3. **`EquipoService.buscar_equipos_disponibles()` itera en Python en vez de filtrar en BD:**
+
+```python
+equipos_disponibles = [
+    equipo.id
+    for equipo in equipos     # ← list comprehension sobre QuerySet
+    ...
+]
+```
+
+Debe traducirse a un filtro ORM con subquery para mantener la eficiencia.
+
+4. **Sin `select_for_update` visible en `ReservaService.crear_reserva()`** — aunque usa `@transaction.atomic`, sin `select_for_update()` sobre el equipo, dos reservas simultáneas pueden reservar el mismo equipo.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

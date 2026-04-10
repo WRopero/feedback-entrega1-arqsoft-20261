@@ -39,6 +39,49 @@ He revisado el código de su proyecto y encontré una implementación completa d
 
 ---
 
+### Análisis Detallado de Código
+
+**Modelos de Datos:**
+
+`Vehiculo` tiene un modelado razonable con estados (`posteado → en_venta → vendido`) y métodos de dominio (`comprar_por_admin()`, `vender()`). `FotoVehiculo` con campo `orden` permite galería ordenada. `Concesionaria` modela correctamente la relación propietario-concesionaria.
+
+**Lo que funciona bien:**
+- Métodos de dominio en el modelo (`comprar_por_admin`, `vender`)
+- `get_absolute_url()` implementado
+- Template tag `cop_format` para formateo de moneda colombiana
+- Management commands para seed data
+- `unique_together = ['vehiculo']` en `Venta` previene doble venta
+- `ValidationError` en `realizar_venta` cuando el estado es incorrecto
+
+**Problemas arquitectónicos:**
+
+1. **SECRET_KEY expuesta + DEBUG hardcodeado:**
+```python
+SECRET_KEY = 'django-insecure-)x68ubl_=f21h9lrtq65=...'
+DEBUG = True
+```
+Mover a variables de entorno inmediatamente.
+
+2. **Autorización basada en `is_staff` — antipatrón:**
+```python
+if not request.user.is_staff:
+    return redirect('/')
+```
+`is_staff` es para acceso al admin de Django, no para lógica de negocio. Crear un campo `rol` o usar grupos.
+
+3. **`anuncios/views.py` importa y opera directamente sobre `inventario.models.Vehiculo`** — acoplamiento entre apps. La app `anuncios` no debería conocer los internos de `inventario`. Crear una capa de servicios.
+
+4. **`comprar_por_admin()` y `vender()` no usan transacciones atómicas.** Si falla a mitad, el estado queda inconsistente. Agregar `@transaction.atomic`.
+
+5. **`Venta.vehiculo` usa `on_delete=CASCADE`** — si se borra un vehículo, se pierde el historial de ventas. Debe ser `PROTECT`.
+
+6. **`usersPrueba.txt` en el repositorio** — posibles credenciales comprometidas.
+
+7. **Sin tests.** Los archivos `tests.py` existen pero están vacíos.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

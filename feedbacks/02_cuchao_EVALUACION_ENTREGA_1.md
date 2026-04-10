@@ -79,6 +79,64 @@ class Carro(models.Model):
 
 ---
 
+### Seguridad y Configuración
+
+**Problemas críticos de seguridad:**
+
+1. **`SECRET_KEY` expuesta en código fuente** — es la vulnerabilidad más grave del proyecto:
+
+```python
+# settings.py (ACTUAL — PELIGROSO)
+SECRET_KEY = 'django-insecure-yx%8++#d7mrex*5jp7ziok-u)^_s3jx0r4d+@e-gzmi#l#d*2w'
+DEBUG = True
+```
+
+Si el repositorio es público (y lo es), cualquiera puede firmar cookies, falsificar sesiones y escalar privilegios. Esto se debe corregir **inmediatamente**:
+
+```python
+import os
+SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
+```
+
+2. **Archivos `.pyc` en el repositorio** — `migrations/__pycache__/` no debe estar en git. Agregar al `.gitignore`:
+```
+__pycache__/
+*.pyc
+```
+
+3. **Media files en el repositorio** — las imágenes subidas por usuarios no deben estar en git.
+
+### Arquitectura
+
+**Sin capa de servicios** — toda la lógica de negocio (crear compra, marcar carro como vendido, validar stock) está directamente en las vistas. Esto hace el código imposible de reutilizar y difícil de testear. Debe existir un `services.py`:
+
+```python
+# carros/services.py
+class VentaService:
+    @staticmethod
+    @transaction.atomic
+    def procesar_compra(comprador, carro_id, metodo_pago):
+        carro = Carro.objects.select_for_update().get(id=carro_id)
+        if carro.vendido:
+            raise ValueError('Carro ya vendido')
+        if carro.propietario == comprador:
+            raise ValueError('No puedes comprar tu propio carro')
+        compra = Compra.objects.create(...)
+        carro.vendido = True
+        carro.save(update_fields=['vendido'])
+        return compra
+```
+
+**Sin tests** — no hay ningún test en el proyecto. Para una aplicación transaccional es crítico tener al menos tests del flujo de compra.
+
+**`Compra.carro` usa `on_delete=CASCADE`** — si se borra un carro, se borra todo su historial de ventas. Debe ser `PROTECT`:
+```python
+carro = models.ForeignKey(Carro, on_delete=models.PROTECT, related_name='ventas')
+```
+
+---
+
 ### Vistas y Lógica de Negocio
 
 **Archivo:** `carros/views.py` (177 líneas, 10 funciones)

@@ -284,6 +284,61 @@ Configuración con frontend y backend separados. Excelente arquitectura.
 
 ---
 
+### Análisis Detallado de Código
+
+**Lo que funciona bien:**
+- `TimeStampedModel` abstracto — patrón DRY aplicado correctamente
+- `ProductVariant` con método `decrement_stock_pessimistic()` documentando el contrato de uso
+- Documentación técnica extensa (`API_CONTRACT.md`, `ARCHITECTURE.md`, diagramas)
+- `slug` en modelos para URLs semánticas
+- Token refresh transparente en el cliente TypeScript con manejo de cola de requests
+
+**Problemas arquitectónicos:**
+
+1. **`CollectionListView.get_queryset()` retorna lista Python en vez de QuerySet — problema grave:**
+
+```python
+def get_queryset(self):
+    queryset = Collection.objects.all()
+    if is_preview == 'true':
+        return [col for col in queryset if col.is_preview()]  # ← LISTA, no QuerySet
+    return [col for col in queryset if col.is_active()]       # ← LISTA, no QuerySet
+```
+
+Esto carga TODAS las colecciones en memoria, rompe la paginación de DRF, y no permite filtros ORM adicionales. Solución:
+
+```python
+from django.utils import timezone
+def get_queryset(self):
+    now = timezone.now()
+    if self.request.query_params.get('is_preview') == 'true':
+        return Collection.objects.filter(release_date__gt=now)
+    return Collection.objects.filter(
+        Q(release_date__isnull=True) | Q(release_date__lte=now)
+    )
+```
+
+2. **`decrement_stock_pessimistic()` en el modelo tiene contrato implícito frágil.** El método dice "debe llamarse dentro de `transaction.atomic()`" pero nada lo garantiza. Esta responsabilidad debería estar en un `CheckoutService`:
+
+```python
+class CheckoutService:
+    @staticmethod
+    @transaction.atomic
+    def reserve_variant(variant_id, quantity):
+        variant = ProductVariant.objects.select_for_update().get(id=variant_id)
+        if not variant.decrement_stock_pessimistic(quantity):
+            raise InsufficientStockError()
+```
+
+3. **JWT tokens en `localStorage` — vulnerable a XSS.** Si hay un ataque XSS, los tokens son accesibles. Mejor usar cookies `HttpOnly` + `SameSite=Strict`.
+
+4. **Import de `settings` en medio de `models.py`** — aparece entre definiciones de clases. Mover al top del archivo.
+
+5. **Sin tests.** El proyecto tiene documentación pero no tests.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

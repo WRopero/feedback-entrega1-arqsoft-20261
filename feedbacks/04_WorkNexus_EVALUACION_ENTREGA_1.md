@@ -212,6 +212,59 @@ services:
 
 ---
 
+### Análisis Detallado de Vistas y Seguridad
+
+**Problemas críticos:**
+
+1. **`@csrf_exempt` en endpoints de autenticación — riesgo de seguridad grave:**
+
+```python
+@method_decorator(csrf_exempt, name="dispatch")
+class RegisterView(View):    # ← Registro sin protección CSRF
+@method_decorator(csrf_exempt, name="dispatch")
+class LoginView(View):       # ← Login sin protección CSRF
+```
+
+Un atacante puede crear cuentas o hacer login en nombre de otro usuario desde un sitio malicioso. Si el proyecto es una API REST, deben usar Django REST Framework con JWT, que maneja CSRF correctamente.
+
+2. **Parsing manual de JSON en lugar de usar DRF:**
+
+```python
+# Actual — frágil, verboso, sin estándar
+data = json.loads(request.body)
+email = data.get("email")
+if not email or not password:
+    return JsonResponse({"error": "..."}, status=400)
+```
+
+DRF ofrece serialización, validación y manejo de errores estandarizados. La validación manual es propensa a errores y no genera mensajes de error consistentes.
+
+3. **Imports dentro de métodos:**
+
+```python
+def post(self, request):
+    from django.contrib.auth import get_user_model  # ← debe ir al top
+    from .models import ClientProfile, FreelancerProfile  # ← debe ir al top
+```
+
+Esto afecta legibilidad y hace que Python re-evalúe el import en cada request.
+
+4. **`age` como `PositiveIntegerField` en `FreelancerProfile`:**
+
+```python
+age = models.PositiveIntegerField()  # Envejece los datos
+# Correcto: date_of_birth = models.DateField()
+```
+
+La edad cambia cada año. Se debe guardar `fecha_nacimiento` y calcular la edad dinámicamente.
+
+5. **Sin capa de servicios.** La lógica de registro (crear usuario + crear perfil + login) está en 80+ líneas dentro de la vista. Debe abstraerse a un `UserRegistrationService`.
+
+6. **Sin tests visibles.** No hay ningún test para autenticación, registro o flujos de negocio.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

@@ -317,6 +317,39 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 ---
 
+### Patrones y Principios SOLID
+
+**Lo que funciona bien:**
+- Separación en apps por dominio (`products`, `orders`, `users`) — SRP a nivel de módulo
+- `products/services.py` para generación de certificados — lógica fuera de vistas
+- `BookDownload` con control de descargas máximas — buen modelado de regla de negocio
+- `CourseProgress.recalculate_progress()` como método de dominio — lógica donde pertenece
+- Integración real con Stripe incluyendo webhook asíncrono
+- Uso correcto de `django-filters` para filtrado declarativo
+
+**Problemas arquitectónicos:**
+
+1. **`Product` con campos de tipo exclusivo — viola cohesión.** `duration` (solo cursos) y `pages` (solo libros) coexisten en la misma tabla. Un libro siempre tiene `duration=''` y un curso `pages=None`. Considerar herencia abstracta o al menos validación a nivel de modelo:
+
+```python
+def clean(self):
+    if self.type == self.TYPE_BOOK and self.duration:
+        raise ValidationError("Los libros no tienen duración")
+    if self.type == self.TYPE_COURSE and self.pages:
+        raise ValidationError("Los cursos no tienen páginas")
+```
+
+2. **`rating` desnormalizado sin mecanismo de actualización.** Si alguien crea una reseña sin pasar por el endpoint, el rating del producto queda stale. Debe calcularse con `Avg('reviews__rating')` o actualizarse vía signal/servicio.
+
+3. **`_grant_user_access_for_order` y `_mark_order_completed` son funciones sueltas en `orders/views.py`** — son lógica de dominio que debería vivir en un `OrderService` o como métodos del modelo `Order`.
+
+4. **Inconsistencia de indentación en `orders/views.py`** — usa tabs en lugar de 4 espacios (PEP8). Esto puede causar `IndentationError` al mezclar con otros archivos.
+
+5. **`category__name` expuesto en filtros de API** — expone la estructura interna del ORM. Usar un `FilterSet` personalizado que mapee `?category=Python` internamente a `category__name`.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

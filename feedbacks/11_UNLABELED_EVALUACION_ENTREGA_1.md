@@ -34,6 +34,55 @@ He revisado el código de su proyecto y encontré una implementación completa d
 
 ---
 
+### Análisis Detallado de Código
+
+**Modelos:**
+
+`Usuario` extiende `AbstractUser` con roles via `TextChoices`. `Producto` con `StockPorTalla` modela correctamente inventario por variante. El carrito tiene implementación dual: sesión (`Cart`) para anónimos y base de datos (`Carrito`) para autenticados.
+
+**Lo que funciona bien:**
+- CBVs (`ListView`, `DetailView`, `CreateView`) — uso correcto del framework
+- Sistema de filtros combinados (precio, talla, búsqueda, ordenamiento) en un solo queryset
+- Paginación con `paginate_by = 12`
+- Carrito dual con key compuesta `producto_id:talla`
+- `Q` objects para búsquedas complejas
+
+**Problemas arquitectónicos:**
+
+1. **Sincronización de carrito bidireccional frágil en `CustomLoginView`:**
+
+```python
+# Sesión → DB
+for s_item in session_cart:
+    db_cart.agregar_item(s_item['producto'], s_item['talla'], s_item['cantidad'])
+
+# DB → Sesión
+for d_item in db_cart.items.all():
+    session_cart.add(d_item.producto, d_item.talla, cantidad=d_item.cantidad, override_cantidad=True)
+```
+
+Este loop bidireccional puede crear duplicados y no maneja conflictos (¿qué pasa si el mismo producto está en ambos con cantidades distintas?). Extraer a un `CartMergeService` con política clara: la DB tiene precedencia.
+
+2. **Imports dispersos dentro de archivos:**
+
+```python
+class CustomLoginView(LoginView):
+    ...
+from cart.cart import Cart      # ← import en medio del archivo
+from cart.models import Carrito
+...
+from django.contrib.auth import logout  # ← otro import suelto
+```
+
+Todos los imports deben ir al inicio del archivo (PEP8 E402).
+
+3. **Acoplamiento entre `accounts` y `cart`** — `accounts/views.py` importa directamente de `cart`. Usar una señal `user_logged_in` o un servicio independiente.
+
+4. **`TALLA_ORDEN` como variable global en `products/views.py`** — constante de dominio en la capa de presentación. Mover a `models.py` o `constants.py`.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

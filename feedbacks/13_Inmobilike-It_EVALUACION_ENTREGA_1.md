@@ -39,6 +39,61 @@ He revisado el código de su proyecto y encontré una implementación completa d
 
 ---
 
+### Análisis Detallado de Código
+
+**Arquitectura:**
+
+El proyecto implementa Repository Pattern + Service Layer + WebSockets (Django Channels). Las apps están organizadas en `apps/` con dominio claro: `accounts`, `properties`, `interactions`, `core`.
+
+**Lo que funciona bien:**
+- `FavoriteRepository`, `InquiryRepository`, `PropertyRepository` — separación de acceso a datos
+- `FavoriteService`, `InquiryService`, `PropertyService` — orquestación de lógica
+- WebSockets con Django Channels para mensajería en tiempo real
+- Tests en `tests/test_interactions.py` y `tests/test_properties.py`
+- `PropertyService.create_property()` maneja location + property + images en un solo método
+
+**Problemas arquitectónicos:**
+
+1. **Repository Pattern con solo `@staticmethod` — verbosidad sin beneficio:**
+
+```python
+class FavoriteRepository:
+    @staticmethod
+    def is_favorite(user, property_obj): ...
+    @staticmethod
+    def get_or_create(user, property_obj): ...
+```
+
+Si todos los métodos son estáticos, la clase no aporta nada sobre un módulo de funciones. El valor del Repository pattern es la abstracción de la fuente de datos (poder cambiar BD por caché o API externa). Con `@staticmethod` se pierde ese beneficio. Alternativas: funciones a nivel de módulo o instancias con inyección de dependencias.
+
+2. **Service Layer como thin wrapper sin lógica real:**
+
+```python
+class FavoriteService:
+    @staticmethod
+    def add_to_favorites(user, property_obj):
+        if not user.is_authenticated:
+            return None, False
+        return FavoriteRepository.get_or_create(user, property_obj)
+```
+
+El servicio solo agrega `is_authenticated`. Si toda la lógica es así de simple, la capa adicional no justifica su existencia. Está bien tenerla para crecer, pero necesita lógica real.
+
+3. **`FavoriteRepository.get_or_create()` captura `IntegrityError` con fallback frágil:**
+```python
+try:
+    return Favorite.objects.get_or_create(...)
+except IntegrityError:
+    favorite = Favorite.objects.filter(...).first()
+    return favorite, False
+```
+`get_or_create` ya maneja race conditions internamente. El `IntegrityError` indica un problema distinto que debería investigarse, no silenciarse.
+
+4. **WebSocket consumer sin autenticación verificada visible.** Django Channels requiere `AuthMiddlewareStack` explícito. Si no se configura, los mensajes son anónimos.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

@@ -215,6 +215,57 @@ Configuración correcta con PostgreSQL y templates.
 
 ---
 
+### Análisis Detallado de Código
+
+**Modelos:**
+
+`Rol` como modelo separado con `permisos = JSONField` es flexible pero agrega complejidad. `Usuario` con `cedula`, `genero`, `verificado`, `foto_perfil` es un modelo rico. El uso de `fecha_nacimiento` (no `age`) es correcto.
+
+**Lo que funciona bien:**
+- Decoradores de rol custom (`@require_rol`, `@require_rols`, `@require_activo`)
+- `init_roles` management command para seeding de datos iniciales
+- `Rol.permisos` como JSONField permite permisos dinámicos sin migraciones
+- `fecha_nacimiento` en vez de `age` — los datos no envejecen
+- Separación en apps (`accounts`, `access`, `end_user`)
+
+**Problemas arquitectónicos:**
+
+1. **`require_rol` y `require_rols` son casi idénticos** — violan DRY:
+
+```python
+def require_rol(rol_requerido):     # acepta un string
+    ...
+    if request.user.rol.nombre != rol_requerido:
+        ...
+
+def require_rols(*roles_requeridos):  # acepta múltiples strings
+    ...
+    if request.user.rol.nombre not in roles_requeridos:
+        ...
+```
+
+Refactorizar a uno solo: `@require_rol('admin')` y `@require_rol('admin', 'organizador')`.
+
+2. **Decoradores de función no funcionan directamente con CBVs.** Si se mezclan FBVs y CBVs, los decoradores requieren `method_decorator` o deben reescribirse como `UserPassesTestMixin`.
+
+3. **`Rol` como tabla separada requiere JOIN en cada request** para verificar permisos. Para un sistema con pocos roles fijos, un `CharField` con `TextChoices` en `Usuario` sería más eficiente:
+
+```python
+class Usuario(AbstractUser):
+    class Rol(models.TextChoices):
+        COMPRADOR = 'comprador'
+        ORGANIZADOR = 'organizador'
+        ADMIN = 'admin'
+    rol = models.CharField(choices=Rol.choices, ...)
+```
+
+4. **`access/services.py` vacío aparentemente.** La lógica de acceso debería tener un servicio real.
+
+5. **Sin tests.** Los flujos de roles y permisos son exactamente donde los tests son más valiosos.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)

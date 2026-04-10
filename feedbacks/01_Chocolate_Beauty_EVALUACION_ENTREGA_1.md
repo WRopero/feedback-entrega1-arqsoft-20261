@@ -116,7 +116,59 @@ def get_queryset(self):
 
 5. **Validación robusta en checkout**: Verifican stock, productos activos, y manejan errores de inventario antes de crear el pedido.
 
-**Mejoras sugeridas:**
+**Problemas arquitectónicos críticos:**
+
+1. **`views.py` es un God File (607 líneas) — viola SRP.** Auth, productos, pedidos, envíos y reseñas viven en un solo archivo. Esto hace el código difícil de mantener, testear y navegar. Debe separarse en módulos:
+
+```
+ecommerce/views/
+    __init__.py
+    auth.py          # CustomTokenObtainPairView, RegistroClienteView, etc.
+    products.py      # ProductoListCreateView, ProductoDetailView, etc.
+    orders.py        # CheckoutPedidoView, MisPedidosListView, etc.
+    reviews.py       # ReseñaListCreateView
+```
+
+2. **No hay capa de servicios — lógica de negocio en las vistas.** `CheckoutPedidoView.post()` tiene ~100 líneas orquestando validación, descuento de stock, creación de pedido, generación de PDF y actualización de perfil. Esto debe extraerse a un `CheckoutService`:
+
+```python
+# services/checkout_service.py
+class CheckoutService:
+    @staticmethod
+    @transaction.atomic
+    def process_checkout(user, items, envio_data, perfil_data) -> Pedido:
+        validated_items = CheckoutService._validate_items(items)
+        pedido = CheckoutService._create_order(user, validated_items)
+        CheckoutService._create_shipping(pedido, envio_data)
+        CheckoutService._generate_invoice(pedido)
+        return pedido
+```
+
+3. **`_build_invoice_pdf()` en `views.py`** — una función de 40 líneas de generación de PDF con ReportLab no tiene nada que ver con HTTP. Debe estar en `services/invoice_service.py`.
+
+4. **`calificacion_promedio` hace N+1 implícito** — itera todas las reseñas en Python:
+
+```python
+# Actual (carga todos los objetos en memoria)
+total = sum(r.calificacion for r in reseñas)
+
+# Correcto (delega al motor SQL)
+from django.db.models import Avg
+return self.reseñas.aggregate(avg=Avg('calificacion'))['avg'] or 0.0
+```
+
+5. **`categoria` como `CharField` libre** — permite `"Skincare"`, `"skincare"`, `"SKINCARE"` como categorías distintas. Debe ser `ForeignKey` a un modelo `Categoria` con `unique=True` en el nombre.
+
+6. **Import dentro de función en `ReseñaListCreateView.perform_create`:**
+```python
+# Actual (malo)
+from rest_framework.exceptions import PermissionDenied  # import lazy innecesario
+# Correcto: mover al top del archivo
+```
+
+7. **Archivos media en el repositorio** — 20+ imágenes en `backend/media/products/`. Las imágenes no deben estar en git. Agregar `media/` al `.gitignore`.
+
+**Mejoras de optimización:**
 
 1. En `CheckoutPedidoView`, el manejo de stock podría mejorarse usando `F()` expressions para evitar race conditions:
 

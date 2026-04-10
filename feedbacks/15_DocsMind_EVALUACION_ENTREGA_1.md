@@ -327,6 +327,52 @@ services:
 
 ---
 
+### Análisis Detallado de Arquitectura
+
+**Este es el único proyecto con DIP (Inversión de Dependencias) real implementado.**
+
+**Lo que funciona bien:**
+- `AIService` como ABC con `@abstractmethod generate_response()` — DIP textbook
+- `GeminiService` y `OpenAIService` como implementaciones concretas
+- Factory Pattern (`get_ai_service()`) resuelve provider según settings
+- `ChatMessage` con `tokens_used` — tracking de costos por mensaje
+- Tests en `chats/tests.py`
+- `.env.example` documentado
+
+**Problemas arquitectónicos:**
+
+1. **`GeminiService.__init__()` hace llamada a API externa en constructor:**
+
+```python
+class GeminiService(AIService):
+    def __init__(self):
+        genai.configure(api_key=settings.GEMINI_API_KEY)  # ← efecto secundario
+        self.model = genai.GenerativeModel(...)            # ← inicialización costosa
+```
+
+Dificulta testing (no se puede instanciar sin credenciales). Usar lazy initialization:
+```python
+def _get_model(self):
+    if not hasattr(self, '_model'):
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        self._model = genai.GenerativeModel(...)
+    return self._model
+```
+
+2. **Factory con imports condicionales dentro de función:**
+```python
+def get_ai_service(provider):
+    if provider == "openai":
+        from .openai_service import OpenAIService  # ← import inside function
+        return OpenAIService()
+```
+Mejor: registrar providers en un dict al inicio del módulo.
+
+3. **`GeminiService` envía todo el historial sin límite** — a diferencia del patrón correcto que limita a últimos N mensajes. Tokens ilimitados = costos inesperados.
+
+
+---
+
 ## Requisitos para Entrega 2 (Rúbrica)
 
 ### 1. Correcciones de la Parte 1 (10%)
