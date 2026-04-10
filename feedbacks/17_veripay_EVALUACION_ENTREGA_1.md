@@ -88,7 +88,3 @@ Las vistas deben verificar que solo usuarios autorizados acceden a los procesos 
 3. **Proteger operaciones de escritura con transacciones atómicas** — `@transaction.atomic` en el servicio de conciliación
 4. **Implementar autenticación** en todos los endpoints
 5. **Quitar archivos de datos reales del repositorio** — reemplazar por fixtures o scripts de seed
-
----
-
-*Evaluación realizada sobre el código fuente del repositorio `gatehortus/proyecto-arquitectura`.*

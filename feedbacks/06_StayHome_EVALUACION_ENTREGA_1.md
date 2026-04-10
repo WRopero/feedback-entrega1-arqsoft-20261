@@ -116,7 +116,3 @@ property_obj.has_sale_contract()  # método de instancia
 ## Buenas Prácticas de Git
 
 89 commits con historial activo y uso de feature branches con pull requests. Es el proyecto con mayor actividad de commits de la entrega.
-
----
-
-*Evaluación realizada sobre el código fuente del repositorio `Horizonte4/stayhome`.*

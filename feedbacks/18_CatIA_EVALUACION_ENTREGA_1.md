@@ -103,7 +103,3 @@ El historial de commits indica que la mayor parte del trabajo se subió en un so
 5. **Limpiar archivos generados automáticamente** — modelos vacíos, archivos `__init__.py` sin contenido útil
 6. **Añadir límite de rate** en los endpoints de chat para evitar abuso de la API de Groq
 7. **Documentar el contrato de la API** — qué campos enviar, qué se retorna, cómo manejar errores
-
----
-
-*Evaluación realizada sobre el código fuente del repositorio `incognauta/CatIA`.*

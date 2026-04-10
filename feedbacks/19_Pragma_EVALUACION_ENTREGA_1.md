@@ -230,7 +230,3 @@ class TaskServiceTests(TestCase):
 | 🟠 Alto | Capa de servicios |
 | 🟡 Medio | Tests |
 | 🟡 Medio | README con instrucciones |
-
----
-
-*No fue posible acceder al repositorio `dcossios/pragma`. Si el proyecto existe y es privado, debe hacerse público para poder evaluarlo en la segunda entrega.*
