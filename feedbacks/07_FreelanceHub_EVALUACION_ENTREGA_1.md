@@ -179,7 +179,124 @@ La rama `feat/chat-contratos` contiene 19 commits con ~3,365 lineas implementand
 
 ---
 
-## 7. Patrones de Codigo Destacables (Positivo)
+## 7. Analisis SOLID
+
+### SRP (Single Responsibility Principle)
+
+**Lo que esta bien:**
+- Las apps de Django estan bien separadas por dominio: `usuarios` (auth + perfiles) y `publicaciones` (servicios). Cada app tiene una responsabilidad clara.
+- Serializers separados por operacion (list/detail/create) - cada uno tiene una sola razon de cambio.
+- Frontend con feature-based architecture: cada feature maneja su propio dominio.
+
+**Violaciones:**
+1. **`usuarios/views.py` mezcla 4 responsabilidades** en un solo archivo: registro, perfil, habilidades y experiencias. Deberia separarse:
+
+```
+usuarios/views/
+    __init__.py
+    auth.py          # RegistroView
+    perfil.py        # PerfilView
+    habilidades.py   # HabilidadListView
+    experiencias.py  # ExperienciaListCreateView, ExperienciaDetailView
+```
+
+2. **`AuthContext.tsx` mezcla autenticacion y datos de perfil.** Login, logout, token management Y carga de perfil viven en el mismo contexto. El perfil deberia tener su propio provider.
+
+3. **`PublicacionCreateSerializer.create()`** crea la publicacion Y crea las imagenes asociadas. La creacion de imagenes deberia delegarse a un servicio o al modelo.
+
+### OCP (Open/Closed Principle)
+
+**Lo que esta bien:**
+- `TextChoices` para estados y categorias permite agregar nuevos valores sin modificar logica existente.
+- `PublicacionManager` con metodos como `activas()` y `por_categoria()` permite agregar filtros sin modificar vistas.
+
+**Violaciones:**
+1. **Categorias hardcodeadas como `TextChoices`** en el modelo `Publicacion`:
+
+```python
+class Categoria(models.TextChoices):
+    DISENO = 'diseno', 'Diseño Gráfico'
+    DESARROLLO = 'desarrollo', 'Desarrollo Web'
+    # Para agregar una nueva categoría hay que modificar el modelo
+```
+
+Deberia ser un modelo `Categoria` separado con `ForeignKey`, asi se agregan categorias sin tocar codigo:
+
+```python
+class Categoria(models.Model):
+    nombre = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(unique=True)
+
+class Publicacion(models.Model):
+    categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT)
+```
+
+2. **`CATEGORIA_LABELS` hardcodeado en `adapters.ts`** duplica las categorias del backend. Si se agrega una categoria en el backend, hay que modificar el frontend tambien.
+
+### LSP (Liskov Substitution Principle)
+
+**Lo que esta bien:**
+- `Usuario` extiende `AbstractUser` correctamente, manteniendo el contrato de Django auth.
+- `EsCreadorOSoloLectura` extiende `BasePermission` respetando la interfaz.
+
+**Sin violaciones evidentes** - los modelos no tienen herencia profunda que pueda romper LSP.
+
+### ISP (Interface Segregation Principle)
+
+**Violaciones:**
+1. **`PerfilSerializer` es un serializer gordo** con 13 campos que maneja lectura, escritura, foto, habilidades y experiencias todo junto. Un cliente que solo necesita el nombre y email recibe todo el payload. Deberian existir:
+   - `PerfilResumenSerializer` (nombre, email, foto)
+   - `PerfilCompletoSerializer` (todo)
+   - `PerfilUpdateSerializer` (campos editables)
+
+2. **En el frontend hay dos interfaces `Perfil` diferentes** (`features/auth/models.ts` y `features/profile/models.ts`). El de auth es un subset del de profile. Deberian compartir una interfaz base y extenderla.
+
+### DIP (Dependency Inversion Principle)
+
+**Violaciones criticas:**
+1. **No hay capa de servicios.** Las vistas llaman directamente a los modelos. No hay abstraccion intermedia. `RegistroView` crea el usuario directamente via el serializer. `PublicacionListCreateView` filtra directamente el ORM. Si manana necesitan cambiar la logica de registro (agregar email de verificacion, notificaciones), hay que modificar la vista.
+
+```python
+# Actual (vista acoplada al ORM)
+class RegistroView(APIView):
+    def post(self, request):
+        serializer = RegistroSerializer(data=request.data)
+        serializer.save()  # Directo al modelo
+
+# Correcto (vista delega a servicio)
+class RegistroView(APIView):
+    def post(self, request):
+        serializer = RegistroSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        RegistrationService.register_user(serializer.validated_data)
+```
+
+2. **En la rama `feat/chat-contratos`, `PropuestaDetailView.put()` importa `chat.models` dentro del metodo:**
+
+```python
+def put(self, request, pk):
+    ...
+    if nuevo_estado == Propuesta.Estado.ACEPTADA:
+        from chat.models import Conversacion  # Import directo a clase concreta
+        Conversacion.objects.create(contrato=contrato)
+```
+
+Esto acopla contratos directamente a chat. Deberia usar un servicio o senales de Django:
+
+```python
+# Usando signals (desacoplado)
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+@receiver(post_save, sender=Contrato)
+def crear_conversacion_para_contrato(sender, instance, created, **kwargs):
+    if created:
+        Conversacion.objects.create(contrato=instance)
+```
+
+---
+
+## 8. Patrones de Codigo Destacables (Positivo)
 
 1. **`@transaction.atomic`** para creacion de usuario + perfil
 2. **Soft deletes** en publicaciones
@@ -194,7 +311,7 @@ La rama `feat/chat-contratos` contiene 19 commits con ~3,365 lineas implementand
 
 ---
 
-## 8. Resumen de Issues Criticos
+## 9. Resumen de Issues Criticos
 
 | # | Issue | Impacto |
 |---|-------|---------|
@@ -204,6 +321,110 @@ La rama `feat/chat-contratos` contiene 19 commits con ~3,365 lineas implementand
 | 4 | No se usa refresh token | Usuarios se desloguean despues de 1 hora |
 | 5 | Pagina raiz muestra demo de componentes | Primera impresion es scaffolding |
 | 6 | Un miembro del equipo con 0 commits | Sin evidencia de contribucion |
+| 7 | No hay capa de servicios (viola DIP) | Vistas acopladas al ORM |
+| 8 | Categorias hardcodeadas (viola OCP) | Agregar categorias requiere modificar codigo |
+
+---
+
+## 10. Requisitos para Entrega 2 (Rubrica)
+
+### 1. Correcciones de la Parte 1 (10%)
+
+- [ ] Mergear rama `feat/chat-contratos` a `main` (contratos, propuestas, chat)
+- [ ] Reemplazar datos mock en contratos y dashboard con llamadas a la API real
+- [ ] Traducir seccion de contratos de ingles a espanol (consistencia de idioma)
+- [ ] Reemplazar pagina raiz (`/`) con landing page o redirect a `/login`
+- [ ] Actualizar metadata de Next.js (titulo y descripcion)
+- [ ] Implementar uso del refresh token en el frontend
+- [ ] Agregar validacion de parametros de precio en filtros (`try/except`)
+- [ ] Agregar `DEFAULT_PERMISSION_CLASSES = ['rest_framework.permissions.IsAuthenticated']`
+- [ ] Eliminar `SECRET_KEY` hardcodeada, moverla a variable de entorno obligatoria
+
+### 2. Diagrama de arquitectura actualizado (5%)
+
+Entregar diagrama que refleje la arquitectura actual del sistema: capas (presentacion, servicios, dominio, persistencia), componentes principales, y las interfaces abstractas (DIP). Formato legible (draw.io, Mermaid, PlantUML).
+
+### 3. Servicios implementados (30%)
+
+Servicio de registro de usuarios, servicio de gestion de contratos/propuestas, servicio de notificaciones (email al aceptar propuesta)
+
+Cada servicio debe:
+- Estar en un archivo `services.py` dentro de su app
+- Encapsular la logica de negocio (las vistas solo delegan)
+- Usar `@transaction.atomic` donde haya operaciones de escritura multiples
+
+### 4. Inversion de dependencias (15%)
+
+Crear una interfaz abstracta para el sistema de notificaciones, con dos implementaciones concretas:
+
+```python
+# services/notifications/base.py
+from abc import ABC, abstractmethod
+
+class NotificationService(ABC):
+    @abstractmethod
+    def notify_proposal_accepted(self, contrato) -> None: ...
+    
+    @abstractmethod
+    def notify_new_message(self, mensaje) -> None: ...
+
+# services/notifications/email_notification.py
+class EmailNotificationService(NotificationService):
+    def notify_proposal_accepted(self, contrato) -> None:
+        # Enviar email al cliente cuando su propuesta es aceptada
+        ...
+
+# services/notifications/mock_notification.py
+class MockNotificationService(NotificationService):
+    def notify_proposal_accepted(self, contrato) -> None:
+        print(f"[MOCK] Propuesta aceptada para contrato {contrato.id}")
+```
+
+El `ContratoService` debe depender de `NotificationService` (abstraccion), no de `EmailNotificationService` (concreto).
+
+### 5. Pruebas unitarias (10%)
+
+Implementar al menos **dos pruebas unitarias** que verifiquen logica de negocio:
+
+```python
+def test_freelancer_no_puede_postularse_a_su_propia_publicacion(self):
+    # Crear publicacion, intentar crear propuesta con el mismo usuario → debe fallar
+
+def test_aceptar_propuesta_crea_contrato_y_rechaza_las_demas(self):
+    # Crear 3 propuestas, aceptar una → 1 contrato creado, 2 propuestas rechazadas
+```
+
+### 6. Calidad del codigo y arquitectura (15%)
+
+- Separacion clara en capas (vistas -> servicios -> modelos)
+- Sin logica de negocio en vistas
+- Sin imports circulares entre apps
+- Sin secretos en el codigo fuente
+- Codigo limpio, sin archivos generados automaticamente sin contenido
+- Todos los miembros del equipo deben tener commits en el repositorio
+
+### 7. Despliegue en nube + sistema de dos idiomas (15%)
+
+- **Despliegue**: El proyecto debe estar desplegado y accesible en un servicio cloud (Railway, Render, AWS, GCP, Azure, etc.)
+- **Internacionalizacion (i18n)**: Implementar soporte para **dos idiomas** (espanol + ingles)
+
+```python
+# settings.py
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGES = [
+    ('es', _('Español')),
+    ('en', _('English')),
+]
+LOCALE_PATHS = [BASE_DIR / 'locale']
+USE_I18N = True
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    ...
+]
+```
 
 ---
 
