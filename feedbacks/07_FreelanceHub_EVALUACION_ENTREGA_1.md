@@ -103,25 +103,38 @@
 
 ## 7. Analisis SOLID
 
-### SRP
+### SRP (Single Responsibility Principle)
+
+Un modulo debe tener una sola razon de cambio. Si un archivo cambia cuando modifico autenticacion Y cuando modifico experiencias laborales, tiene dos razones de cambio.
+
 - Las apps estan bien separadas por dominio y los serializers por operacion
-- `usuarios/views.py` mezcla registro, perfil, habilidades y experiencias en un solo archivo
-- `AuthContext.tsx` mezcla autenticacion y datos de perfil en un solo contexto
+- `usuarios/views.py` mezcla registro, perfil, habilidades y experiencias en un solo archivo. Si un equipo trabaja en autenticacion y otro en experiencias, ambos modifican el mismo archivo
+- `AuthContext.tsx` mezcla manejo de tokens y datos de perfil. Si cambia la estrategia de auth (pasar de localStorage a cookies), tambien se afecta la carga de perfil
 
-### OCP
+### OCP (Open/Closed Principle)
+
+El software debe estar abierto para extension, cerrado para modificacion. Un ejemplo clasico: si tengo tipos de pago como enum (`TARJETA`, `EFECTIVO`), agregar `BITCOIN` requiere modificar el enum. Si en cambio tengo un modelo `MetodoPago` en la base de datos, agrego registros sin tocar codigo.
+
 - `TextChoices` para estados permite extensibilidad
-- Categorias hardcodeadas como enum en el modelo - agregar categorias requiere modificar codigo fuente. Deberia ser un modelo aparte
+- Categorias hardcodeadas como enum en el modelo. Agregar una categoria nueva (ej: "Inteligencia Artificial") requiere modificar el codigo fuente, hacer migracion y redesplegar. Deberia poder agregarse sin tocar codigo
 
-### LSP
-- Sin violaciones evidentes
+### LSP (Liskov Substitution Principle)
 
-### ISP
-- `PerfilSerializer` tiene 13 campos para todos los casos de uso. Un cliente que solo necesita nombre y email recibe todo
-- Dos interfaces `Perfil` diferentes en el frontend para el mismo concepto
+- Sin violaciones evidentes. Los modelos no tienen herencia profunda
 
-### DIP
-- No hay capa de servicios - las vistas llaman directamente al ORM
-- En la rama de contratos, aceptar una propuesta importa y crea directamente objetos de la app de chat, acoplando ambos dominios
+### ISP (Interface Segregation Principle)
+
+Un cliente no deberia depender de metodos que no usa. Si un endpoint solo necesita nombre y email, no deberia recibir un serializer con 13 campos incluyendo foto, habilidades y experiencias.
+
+- `PerfilSerializer` sirve para todo: lectura, escritura, listado. Un endpoint que solo necesita mostrar el nombre del creador de una publicacion carga todo el perfil completo
+- Dos interfaces `Perfil` diferentes en el frontend para el mismo concepto, una en auth y otra en profile
+
+### DIP (Dependency Inversion Principle)
+
+Los modulos de alto nivel no deben depender de modulos de bajo nivel, ambos deben depender de abstracciones. Si una vista llama directamente a `MiModelo.objects.create()`, esta acoplada a Django ORM. Si manana necesito agregar una notificacion por email al crear, tengo que modificar la vista.
+
+- No hay capa de servicios. Las vistas llaman directamente al ORM. Toda la logica de negocio vive en views y serializers
+- En la rama de contratos, aceptar una propuesta importa y crea directamente objetos de la app de chat dentro del metodo de la vista, acoplando los dominios de contratos y chat
 
 ---
 
